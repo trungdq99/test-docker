@@ -81,7 +81,7 @@ def get_r2_client():
     access_key = os.getenv("R2_ACCESS_KEY_ID")
     secret_key = os.getenv("R2_SECRET_ACCESS_KEY")
     if not R2_ENDPOINT_URL or not access_key or not secret_key:
-        raise RuntimeError("Missing R2 config. Set R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY before starting uvicorn.")
+        return None
     return boto3.client(
         "s3",
         endpoint_url=R2_ENDPOINT_URL,
@@ -94,6 +94,16 @@ def get_r2_client():
 
 def upload_to_r2(local_path: str, key: str) -> dict:
     client = get_r2_client()
+    if client is None:
+        print(f"[WARN] R2 credentials not configured. Skipping remote upload for {key}. Keeping local: {local_path}", flush=True)
+        return {
+            "bucket": None,
+            "key": key,
+            "size": int(os.path.getsize(local_path)) if os.path.isfile(local_path) else 0,
+            "etag": "",
+            "presigned_url": None,
+            "local_path": local_path,
+        }
     with open(local_path, "rb") as f:
         client.put_object(
             Bucket=R2_BUCKET,
@@ -445,7 +455,7 @@ def download_and_extract_zip(url: str, job_dir: str, dest_dir: str) -> List[str]
     # 1. Download the file
     print(f"Downloading ZIP from: {url}")
     if "drive.google.com" in url or "docs.google.com" in url:
-        gdown.download(url, zip_path, quiet=True)
+        gdown.download(url, zip_path, quiet=False, fuzzy=True)
     else:
         response = requests.get(url, stream=True, timeout=600)
         response.raise_for_status()
